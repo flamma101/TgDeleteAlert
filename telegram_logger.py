@@ -13,25 +13,30 @@ Requirements:
 
 Setup:
 1. pip install telethon requests
-2. Define the following environment variables: API_ID, API_HASH, OWN_USER_ID, LOG_CHAT_ID, WEBHOOK_URL (optional)
+2. Define the following environment variables: API_ID, API_HASH, STRING_SESSION, OWN_USER_ID, LOG_CHAT_ID, WEBHOOK_URL (optional)
 3. Run: python3 telegram_logger.py
 """
 import os
 import sqlite3
 import logging
 from datetime import datetime
-from telethon import TelegramClient, events
-from telethon.tl.types import User
 import asyncio
 import re
 import requests
+from telethon import TelegramClient, events
+from telethon.sessions import StringSession
+from telethon.tl.types import User
 
 # -- Configuration from environment --
-API_ID      = int(os.getenv("API_ID"))           # required
-API_HASH    = os.getenv("API_HASH")              # required
-OWN_USER_ID = int(os.getenv("OWN_USER_ID"))      # your Telegram user ID
-LOG_CHAT_ID = int(os.getenv("LOG_CHAT_ID"))      # chat ID to log into (e.g., Saved Messages)
-WEBHOOK_URL = os.getenv("WEBHOOK_URL", "")     # optional webhook URL for deleted messages
+API_ID        = int(os.getenv("API_ID"))                             # required
+API_HASH      = os.getenv("API_HASH")                               # required
+STRING_SESSION = os.getenv("STRING_SESSION", "")                  # required for user session login
+OWN_USER_ID   = int(os.getenv("OWN_USER_ID"))                        # your Telegram user ID
+LOG_CHAT_ID   = int(os.getenv("LOG_CHAT_ID"))                        # chat ID to log into (e.g., Saved Messages)
+WEBHOOK_URL   = os.getenv("WEBHOOK_URL", "")                       # optional webhook URL
+
+# Initialize client with string session
+client = TelegramClient(StringSession(STRING_SESSION), API_ID, API_HASH)
 
 # SQLite database path
 db_path = os.path.join(os.path.dirname(__file__), 'telegram_messages.db')
@@ -74,9 +79,6 @@ except sqlite3.OperationalError:
     pass
 
 conn.commit()
-
-# -- Telegram Client --
-client = TelegramClient('session', API_ID, API_HASH)
 
 # -- Utility Functions --
 def extract_urls(text):
@@ -140,7 +142,7 @@ async def deleted_message_handler(event):
         except Exception:
             username = chat_id
         await send_telegram_alert(
-            f"Username: {username}\nMessage ID: {msg_id}\nReason: deleted_owner_msg\nContent:\n{original_text}"
+            f"Chat ID: {username}\nMessage ID: {msg_id}\nReason: deleted_by_owner\nContent:\n{original_text}"
         )
         logger.warning(f"Message {msg_id} was deleted in chat with {username}. Content: '{original_text}'")
 
@@ -192,7 +194,7 @@ async def watchdog_deleted_by_others():
                         await send_telegram_alert(
                             f"Chat ID: {username}\nMessage ID: {missing_id}\nReason: deleted_by_other_party\nContent:\n{deleted_text}"
                         )
-                        logger.warning(f"[Watchdog] Your message {missing_id} was likely deleted in chat {username}. Content: '{deleted_text}'")
+                        logger.warning(f"[Watchdog] Your message {missing_id} was likely deleted in chat with {username}. Content: '{deleted_text}'")
                 except Exception as inner:
                     logger.error(f"Watchdog failed in chat {chat_id}: {inner}")
         except Exception as e:
@@ -211,6 +213,5 @@ async def main():
     await client.run_until_disconnected()
 
 if __name__ == '__main__':
-    import asyncio
     loop = asyncio.get_event_loop()
     loop.run_until_complete(main())
